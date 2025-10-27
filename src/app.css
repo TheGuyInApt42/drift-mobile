@@ -1,0 +1,33 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/forms';
+@plugin '@tailwindcss/typography';
+
+body {
+	overscroll-behavior: none;
+}
+
+img {
+	/* Prevent haptic touch previews */
+	-webkit-touch-callout: none;
+	-webkit-user-drag: none;
+}
+
+/* Where you don't want a scrollbar to appear, use this. */
+/*
+::-webkit-scrollbar {
+  display: none;
+}
+scrollbar-width: none;
+*/
+
+/* Safe area insets */
+/* env(safe-area-inset-top);
+env(safe-area-inset-bottom);
+env(safe-area-inset-left);
+env(safe-area-inset-right); */
+
+html,
+body {
+	background: linear-gradient(to bottom, #020617, #0f172a, #020617);
+	min-height: 100vh;
+}

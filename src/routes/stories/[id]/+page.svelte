@@ -12,6 +12,7 @@
 	import StoryText from '$lib/components/StoryText.svelte';
 	import AmbientAnimations from '$lib/components/AmbientAnimations.svelte';
 	import NotificationToast from '$lib/components/NotificationToast.svelte';
+	import { ambient } from '$lib/state/ambient.svelte';
 
 	// Import story images
 	import noah from '$lib/assets/noah-hero.png';
@@ -70,7 +71,6 @@
 	let isPlaying = $state(false);
 	let sleepTimerActive = $state(false);
 	let sleepTimerMinutes = $state(0);
-	let ambientEnabled = $state(false);
 	let isTextMode = $state(false);
 	let ambientAnimationType = $state<'rain' | 'candle' | 'none'>('rain');
 
@@ -121,7 +121,7 @@
 
 	// Update animation type when ambient toggle changes
 	$effect(() => {
-		ambientAnimationType = ambientEnabled ? 'rain' : 'none';
+		ambientAnimationType = ambient.enabled ? 'rain' : 'none';
 	});
 
 	function handleTextModeToggle(enabled: boolean) {
@@ -245,7 +245,7 @@
 				<!-- Control Panel -->
 				<div class="mb-8 flex flex-wrap items-center gap-3">
 					<SleepTimer onTimerSet={handleSleepTimerSet} onTimerClear={handleSleepTimerClear} />
-					<AmbientToggle ambientUrl="/audio/ambience/rain.mp3" bind:isEnabled={ambientEnabled} />
+					<AmbientToggle />
 					<TextModeToggle bind:isTextMode />
 				</div>
 

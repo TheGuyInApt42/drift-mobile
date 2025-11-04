@@ -1,83 +1,19 @@
 <script lang="ts">
-	import { Howl } from 'howler';
+	import { ambient, toggleAmbient as toggleAmbientGlobal } from '$lib/state/ambient.svelte';
 
 	interface Props {
-		ambientUrl?: string;
-		isEnabled?: boolean;
 		onToggle?: (enabled: boolean) => void;
 	}
 
-	let {
-		ambientUrl = '/audio/ambience/rain.mp3',
-		isEnabled = $bindable(false),
-		onToggle = () => {}
-	}: Props = $props();
+	let { onToggle = () => {} }: Props = $props();
 
-	let ambientHowl: Howl | null = null;
-	let isInitialized = false;
-
-	// Initialize ambient sound
-	function initAmbient() {
-		if (isInitialized || !ambientUrl) return;
-
-		ambientHowl = new Howl({
-			src: [ambientUrl],
-			loop: true,
-			volume: 0.25,
-			preload: true,
-			html5: true,
-			onloaderror: () => {
-				console.error('Failed to load ambient sound');
-			}
-		});
-		isInitialized = true;
-	}
+	// The ambient state comes from the global store
+	let isEnabled = $derived(ambient.enabled);
 
 	function toggleAmbient() {
-		if (!isInitialized) {
-			initAmbient();
-		}
-
-		const newState = !isEnabled;
-		isEnabled = newState;
-
-		if (ambientHowl) {
-			if (newState) {
-				ambientHowl.play();
-				ambientHowl.fade(0, 0.25, 600); // Fade in
-			} else {
-				ambientHowl.fade(ambientHowl.volume(), 0, 600); // Fade out
-				setTimeout(() => ambientHowl?.pause(), 650);
-			}
-		}
+		toggleAmbientGlobal();
+		onToggle(ambient.enabled);
 	}
-
-	// Handle external state changes
-	$effect(() => {
-		if (isEnabled && !isInitialized) {
-			initAmbient();
-		}
-	});
-
-	// Separate effect for audio control to prevent hiccups
-	$effect(() => {
-		if (ambientHowl && isInitialized) {
-			if (isEnabled) {
-				ambientHowl.play();
-				ambientHowl.fade(0, 0.25, 600); // Fade in
-			} else {
-				ambientHowl.fade(ambientHowl.volume(), 0, 600); // Fade out
-				setTimeout(() => ambientHowl?.pause(), 650);
-			}
-		}
-	});
-
-	// Cleanup on destroy
-	import { onDestroy } from 'svelte';
-	onDestroy(() => {
-		ambientHowl?.stop();
-		ambientHowl?.unload();
-	});
 </script>
 
 <button

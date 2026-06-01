@@ -75,8 +75,7 @@
 		durationMin: 25,
 		tags: ['Calm', 'Faith & Light'],
 		cover: noah,
-		previewUrl:
-			'https://sxoswsjfcnvmrzgtfmer.supabase.co/storage/v1/object/sign/audio/stories/noah-and-the-ark/preview-15s.mp3?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWdu fractionaW5nLWtleV84ZDBlODUwZC05YjY1LTQyOTQtYjgxMC1kMTgwZTA1MDM5MzgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhdWRpby9zdG9yaWVzL25vYWgtYW5kLXRoZS1hcmsvcHJldmlldy0xNXMubXAzIiwiaWF0IjoxNzYwNzM5ODU4LCJleHAiOjE3NjEzNDQ2NTh9.BU41zUoQrsB1Hs9XxA_1aeBL0ua1hwQ2VlysHipFVm0'
+		previewUrl: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/noah/preview-15s.mp3'
 	};
 
 	/**

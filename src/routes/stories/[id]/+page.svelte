@@ -2,7 +2,6 @@
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
-	import { Howl } from 'howler';
 
 	// Import components
 	import StoryPlayer from '$lib/components/StoryPlayer.svelte';
@@ -20,7 +19,7 @@
 	import samaritan from '$lib/assets/samaritan.png';
 	import jonah from '$lib/assets/jonah.png';
 
-	// Story data
+	// Story data with Jonah modified to accept multiple scenes
 	const stories = {
 		'noah-rainbow-promise': {
 			id: 'noah-rainbow-promise',
@@ -30,7 +29,7 @@
 			tags: ['Calm', 'Faith & Light'],
 			cover: noah,
 			audioUrl:
-				'https://sxoswsjfcnvmrzgtfmer.supabase.co/storage/v1/object/sign/audio/stories/noah-and-the-ark/Noah%20Scenes%201+2.mp3?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV84ZDBlODUwZC05YjY1LTQyOTQtYjgxMC1kMTgwZTA1MDM5MzgiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJhdWRpby9zdG9yaWVzL25vYWgtYW5kLXRoZS1hcmsvTm9haCBTY2VuZXMgMSsyLm1wMyIsImlhdCI6MTc2MDkwNTcxMCwiZXhwIjoxNzYxNTEwNTEwfQ.pVJfMyo_O9uRknLSJLs-03cv_FJsBiZJWaXhb297hrc'
+				'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/noah/Noah%20Scenes%201%2B2.mp3'
 		},
 		'david-giant-shadow': {
 			id: 'david-giant-shadow',
@@ -57,7 +56,21 @@
 			durationMin: 24,
 			tags: ['Reflective', 'Faith & Light'],
 			cover: jonah,
-			audioUrl: '/audio/stories/jonah.mp3'
+			// Array of tracks for continuous play
+			audioUrl: [
+				{
+					title: 'Act I: The Dust of Gath-Hepher',
+					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/01_Scene%201.mp3'
+				},
+				{
+					title: 'Act I: The Flight to Joppa',
+					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/02_Scene%202.mp3'
+				},
+				{
+					title: 'Act II: The Gathering Storm',
+					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/03_Scene%203.mp3'
+				}
+			]
 		}
 	};
 
@@ -67,6 +80,7 @@
 	});
 
 	// Player state
+	let currentTrackIndex = $state(0);
 	let volume = $state(0.7);
 	let isPlaying = $state(false);
 	let sleepTimerActive = $state(false);
@@ -74,16 +88,50 @@
 	let isTextMode = $state(false);
 	let ambientAnimationType = $state<'rain' | 'candle' | 'none'>('rain');
 
+	// 3. Extracting the real URL string reactively
+	let activeAudioUrl = $derived(() => {
+		const story = currentStory();
+		if (!story) return '';
+
+		if (Array.isArray(story.audioUrl)) {
+			return story.audioUrl[currentTrackIndex]?.url || '';
+		}
+		return story.audioUrl;
+	});
+
+	// Reset indices on navigation changes
+	$effect(() => {
+		currentStory();
+		currentTrackIndex = 0;
+	});
+
+	// 4. Sequential track playlist routing
+	function handleTrackFinished() {
+		const story = currentStory();
+		if (story && Array.isArray(story.audioUrl)) {
+			if (currentTrackIndex < story.audioUrl.length - 1) {
+				currentTrackIndex++;
+				isPlaying = true;
+				addNotification(`Playing next chapter: ${story.audioUrl[currentTrackIndex].title}`, 'info');
+			} else {
+				isPlaying = false;
+				currentTrackIndex = 0;
+				addNotification('Story completed', 'success');
+			}
+		} else {
+			isPlaying = false;
+		}
+	}
+
 	// Sleep timer
 	let sleepTimerInterval: ReturnType<typeof setTimeout> | null = null;
 
-	// Notifications
+	// Notifications state
 	let notifications = $state<
 		Array<{ id: number; message: string; type: 'success' | 'info' | 'warning' | 'error' }>
 	>([]);
 	let notificationId = 0;
 
-	// Event handlers for components
 	function handlePlayStateChange(playing: boolean) {
 		isPlaying = playing;
 	}
@@ -92,15 +140,10 @@
 		sleepTimerActive = true;
 		sleepTimerMinutes = minutes;
 
-		// Clear existing timer
-		if (sleepTimerInterval) {
-			clearTimeout(sleepTimerInterval);
-		}
+		if (sleepTimerInterval) clearTimeout(sleepTimerInterval);
 
-		// Set new timer
 		sleepTimerInterval = setTimeout(
 			() => {
-				// Pause audio and show notification
 				isPlaying = false;
 				sleepTimerActive = false;
 				sleepTimerMinutes = 0;
@@ -119,42 +162,31 @@
 		}
 	}
 
-	// Update animation type when ambient toggle changes
 	$effect(() => {
 		ambientAnimationType = ambient.enabled ? 'rain' : 'none';
 	});
 
 	function handleTextModeToggle(enabled: boolean) {
 		isTextMode = enabled;
-		if (enabled) {
-			// Pause audio when switching to text mode
-			isPlaying = false;
-		}
+		if (enabled) isPlaying = false;
 	}
 
 	function addNotification(message: string, type: 'success' | 'info' | 'warning' | 'error') {
 		const id = ++notificationId;
-		notifications = [...notifications, { id, message, type }];
+		notifications.push({ id, message, type });
 	}
 
 	function removeNotification(id: number) {
 		notifications = notifications.filter((n) => n.id !== id);
 	}
 
-	// Redirect to home if story not found
 	$effect(() => {
-		const story = currentStory();
-		if (!story) {
-			goto('/');
-		}
+		if (!currentStory()) goto('/');
 	});
 
 	onMount(() => {
 		return () => {
-			// Cleanup sleep timer
-			if (sleepTimerInterval) {
-				clearTimeout(sleepTimerInterval);
-			}
+			if (sleepTimerInterval) clearTimeout(sleepTimerInterval);
 		};
 	});
 </script>
@@ -231,7 +263,7 @@
 							</svg>
 							{currentStory()?.durationMin} min
 						</span>
-						{#each currentStory()?.tags || [] as tag}
+						{#each currentStory()?.tags || [] as tag, index (index)}
 							<span class="inline-flex items-center gap-1">
 								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 									<circle cx="12" cy="12" r="3" fill="currentColor" />
@@ -254,10 +286,37 @@
 					<StoryText storyTitle={currentStory()?.title || ''} />
 				{:else}
 					<StoryPlayer
-						audioUrl={currentStory()?.audioUrl || ''}
+						audioUrl={activeAudioUrl()}
 						bind:volume
+						bind:isPlaying
 						onPlayStateChange={handlePlayStateChange}
+						onFinished={handleTrackFinished}
 					/>
+
+					{#if Array.isArray(currentStory()?.audioUrl)}
+						<div
+							class="mt-6 rounded-2xl border border-slate-800/80 bg-slate-900/30 p-5 backdrop-blur-sm"
+						>
+							<h3 class="mb-3 text-xs font-bold tracking-wider text-slate-400 uppercase">
+								Chapters Playlist
+							</h3>
+							<ol class="space-y-2">
+								{#each currentStory()?.audioUrl || [] as track, idx}
+									<li
+										class="flex items-center justify-between rounded-xl px-4 py-2.5 text-sm transition-all {idx ===
+										currentTrackIndex
+											? 'border border-amber-400/20 bg-amber-400/10 font-medium text-amber-300'
+											: 'text-slate-400 hover:bg-slate-800/30'}"
+									>
+										<span class="truncate">{idx + 1}. {track.title}</span>
+										{#if idx === currentTrackIndex && isPlaying}
+											<span class="flex h-2 w-2 animate-ping rounded-full bg-amber-400"></span>
+										{/if}
+									</li>
+								{/each}
+							</ol>
+						</div>
+					{/if}
 				{/if}
 			</div>
 		</main>

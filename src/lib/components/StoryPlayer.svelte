@@ -1,25 +1,35 @@
 <script lang="ts">
 	import { Howl } from 'howler';
+	import { untrack } from 'svelte';
 
 	interface Props {
 		audioUrl: string;
 		volume?: number;
+		isPlaying?: boolean; // 1. Add isPlaying to your props definition
 		onPlayStateChange?: (isPlaying: boolean) => void;
+		onFinished?: () => void;
 	}
 
-	let { audioUrl, volume = $bindable(0.7), onPlayStateChange = () => {} }: Props = $props();
+	// 2. Turn isPlaying into a bindable property
+	let {
+		audioUrl,
+		volume = $bindable(0.7),
+		isPlaying = $bindable(false),
+		onPlayStateChange = () => {},
+		onFinished = () => {}
+	}: Props = $props();
 
 	let storyHowl: Howl | null = null;
-	let isPlaying = $state(false);
 	let currentTime = $state(0);
 	let duration = $state(0);
 	let isLoading = $state(false);
 
-	// Initialize story audio
-	function initStory() {
-		if (!audioUrl) return;
+	let currentlyLoadedUrl = '';
 
-		// Clean up existing instance
+	// Initialize story audio
+	function initStory(shouldAutoPlay = false) {
+		if (!audioUrl || audioUrl === currentlyLoadedUrl) return;
+
 		if (storyHowl) {
 			storyHowl.stop();
 			storyHowl.unload();
@@ -27,13 +37,20 @@
 		}
 
 		isLoading = true;
+		currentlyLoadedUrl = audioUrl;
+
 		storyHowl = new Howl({
 			src: [audioUrl],
 			html5: true,
-			volume: volume,
+			volume: untrack(() => volume),
 			onload: () => {
 				duration = storyHowl?.duration() || 0;
 				isLoading = false;
+
+				// 3. Check either the explicit flag OR the parent's current state
+				if (shouldAutoPlay || isPlaying) {
+					storyHowl?.play();
+				}
 			},
 			onplay: () => {
 				isPlaying = true;
@@ -50,13 +67,15 @@
 				onPlayStateChange(false);
 			},
 			onend: () => {
-				isPlaying = false;
-				currentTime = 0;
+				// 4. CRITICAL: Don't forcefully wipe out parent state here if we are chaining tracks
 				onPlayStateChange(false);
+				onFinished();
 			},
 			onloaderror: () => {
 				isLoading = false;
-				console.error('Failed to load audio');
+				isPlaying = false;
+				currentlyLoadedUrl = '';
+				console.error('Failed to load audio source link:', audioUrl);
 			}
 		});
 	}
@@ -69,13 +88,16 @@
 	}
 
 	function togglePlay() {
-		if (!storyHowl) initStory();
+		if (!storyHowl) {
+			initStory(true);
+			return;
+		}
 		if (isLoading) return;
 
 		if (isPlaying) {
-			storyHowl?.pause();
+			storyHowl.pause();
 		} else {
-			storyHowl?.play();
+			storyHowl.play();
 		}
 	}
 
@@ -91,29 +113,34 @@
 		return `${mins}:${secs.toString().padStart(2, '0')}`;
 	}
 
-	// Initialize when audioUrl changes
+	// Reactive Effect: ONLY runs when audioUrl changes explicitly
 	$effect(() => {
 		if (audioUrl) {
-			initStory();
+			// Look at the state right before the change happens
+			const wasPlaying = untrack(() => isPlaying);
+			initStory(wasPlaying);
 		}
 	});
 
-	// Update Howl volume when volume changes
+	// Reactive Effect: Isolated entirely to volume mutations
 	$effect(() => {
 		if (storyHowl) {
 			storyHowl.volume(volume);
 		}
 	});
 
-	// Cleanup on destroy
-	import { onDestroy } from 'svelte';
-	onDestroy(() => {
-		storyHowl?.unload();
+	// Destruction Lifecycle Hook
+	$effect(() => {
+		return () => {
+			if (storyHowl) {
+				storyHowl.stop();
+				storyHowl.unload();
+			}
+		};
 	});
 </script>
 
 <div class="rounded-2xl border border-white/10 bg-slate-900/40 p-6 backdrop-blur-md">
-	<!-- Large Play/Pause Button -->
 	<div class="mb-8 flex items-center justify-center">
 		<button
 			onclick={togglePlay}
@@ -121,7 +148,6 @@
 			class="group relative flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-tr from-amber-300 to-amber-400 text-slate-900 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-amber-500/25 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:scale-100"
 		>
 			{#if isLoading}
-				<!-- Loading spinner -->
 				<svg class="h-8 w-8 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 					<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" opacity="0.3" />
 					<path
@@ -132,13 +158,11 @@
 					/>
 				</svg>
 			{:else if isPlaying}
-				<!-- Pause icon -->
 				<svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 					<rect x="6" y="4" width="4" height="16" fill="currentColor" rx="1" />
 					<rect x="14" y="4" width="4" height="16" fill="currentColor" rx="1" />
 				</svg>
 			{:else}
-				<!-- Play icon -->
 				<svg width="32" height="32" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 					<path d="M8 5v14l11-7z" fill="currentColor" />
 				</svg>
@@ -146,7 +170,6 @@
 		</button>
 	</div>
 
-	<!-- Progress Bar -->
 	<div class="mb-6">
 		<div class="mb-3 flex justify-between text-sm text-slate-300">
 			<span>{formatTime(currentTime)}</span>
@@ -161,7 +184,7 @@
 			aria-valuemax={duration}
 			aria-valuenow={currentTime}
 			onclick={(e) => {
-				if (!storyHowl) return;
+				if (!storyHowl || duration === 0) return;
 				const rect = e.currentTarget.getBoundingClientRect();
 				const x = e.clientX - rect.left;
 				const percentage = x / rect.width;
@@ -170,7 +193,7 @@
 			onkeydown={(e) => {
 				if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
 					e.preventDefault();
-					const step = duration * 0.05; // 5% steps
+					const step = duration * 0.05;
 					const newTime =
 						e.key === 'ArrowLeft'
 							? Math.max(0, currentTime - step)
@@ -186,7 +209,6 @@
 		</div>
 	</div>
 
-	<!-- Volume Control -->
 	<div class="flex items-center gap-4">
 		<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 			<path

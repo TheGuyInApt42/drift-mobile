@@ -59,16 +59,44 @@
 			// Array of tracks for continuous play
 			audioUrl: [
 				{
-					title: 'Act I: The Dust of Gath-Hepher',
+					title: 'Scene 1: Gath-Hepher',
 					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/01_Scene%201.mp3'
 				},
 				{
-					title: 'Act I: The Flight to Joppa',
+					title: 'Scene 2: The Flight to Joppa',
 					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/02_Scene%202.mp3'
 				},
 				{
-					title: 'Act II: The Gathering Storm',
+					title: 'Scene 3: The Gathering Storm',
 					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/03_Scene%203.mp3'
+				},
+				{
+					title: 'Scene 4: The Sleep of Jonah',
+					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/04_Scene%204.mp3'
+				},
+				{
+					title: 'Scene 5: The Throw',
+					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/05_Scene%205.mp3'
+				},
+				{
+					title: 'Scene 6: The Descent into the Deep',
+					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/06_Scene%206.mp3'
+				},
+				{
+					title: 'Scene 7: The Leviathan',
+					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/07_Scene%207.mp3'
+				},
+				{
+					title: 'Scene 8: The Prayer from the Deep',
+					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/08_Scene%208.mp3'
+				},
+				{
+					title: 'Scene 9: The Vomit',
+					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/09_Scene%209.mp3'
+				},
+				{
+					title: 'Scene 10: The Road to Nineveh',
+					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/10_Scene%2010.mp3'
 				}
 			]
 		}

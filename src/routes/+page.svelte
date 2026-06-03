@@ -21,7 +21,6 @@
 	import { Howl } from 'howler';
 	import {
 		ambient,
-		initAmbient,
 		toggleAmbient as toggleAmbientGlobal,
 		stopAmbient
 	} from '$lib/state/ambient.svelte';
@@ -55,11 +54,15 @@
 		id: string;
 		title: string;
 		subtitle?: string;
-		durationMin: number;
+		duration_min: number; // was durationMin
 		tags: string[];
-		cover: string; // image url
-		previewUrl?: string; // 10–15s snippet
+		cover_url: string; // was cover
+		preview_url?: string; // was previewUrl
 	};
+
+	let { data } = $props();
+	let stories: Story[] = $derived(data.stories);
+	let featured: Story | null = $derived(data.featured);
 
 	// ============================================================================
 	// Mock Data (Temporary - Replace with CMS/Supabase)
@@ -68,47 +71,11 @@
 	 * Featured story displayed prominently in the hero section
 	 * This is the main story promoted on the homepage
 	 */
-	const featured: Story = {
-		id: 'noah-rainbow-promise',
-		title: 'Noah and the Rainbow Promise',
-		subtitle: 'A gentle 25‑minute bedtime drama',
-		durationMin: 25,
-		tags: ['Calm', 'Faith & Light'],
-		cover: noah,
-		previewUrl: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/noah/preview-15s.mp3'
-	};
 
 	/**
 	 * Complete library of available stories
 	 * Includes the featured story plus additional stories displayed in the library grid
 	 */
-	const library: Story[] = [
-		featured,
-		{
-			id: 'david-giant-shadow',
-			title: 'David and the Giant’s Shadow',
-			durationMin: 22,
-			tags: ['Hopeful', 'Faith & Light'],
-			cover: david,
-			previewUrl: '/audio/previews/david-12s.mp3'
-		},
-		{
-			id: 'good-samaritan-road',
-			title: 'The Road of Kindness',
-			durationMin: 18,
-			tags: ['Kindness Tales'],
-			cover: samaritan,
-			previewUrl: '/audio/previews/samaritan-10s.mp3'
-		},
-		{
-			id: 'jonah-beneath-blue',
-			title: 'Jonah: Beneath the Deep Blue',
-			durationMin: 24,
-			tags: ['Reflective', 'Faith & Light'],
-			cover: jonah,
-			previewUrl: '/audio/previews/jonah-12s.mp3'
-		}
-	];
 
 	// ============================================================================
 	// State Management (Svelte 5 Runes)
@@ -148,11 +115,11 @@
 	 * Note: Only plays if story.previewUrl is defined
 	 */
 	function playPreview(story: Story) {
-		if (!story.previewUrl) return;
-		userGesture = true; // Mark that user has interacted (enables future audio)
-		previewHowl?.stop(); // Stop any existing preview
-		previewHowl?.unload(); // Free up resources
-		previewHowl = new Howl({ src: [story.previewUrl], volume: 0.9, html5: true });
+		if (!story.preview_url) return;
+		userGesture = true;
+		previewHowl?.stop();
+		previewHowl?.unload();
+		previewHowl = new Howl({ src: [story.preview_url], volume: 0.9, html5: true });
 		previewHowl.play();
 	}
 
@@ -321,41 +288,43 @@
 				- Duration and tags
 				- Gradient overlay for text readability
 			-->
-			<article
-				class="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-900/40 backdrop-blur-md"
-			>
-				<img
-					src={featured.cover}
-					alt={featured.title}
-					class="h-72 w-full object-cover opacity-90 sm:h-96"
-				/>
-				<div class="absolute inset-0 bg-gradient-to-t from-slate-950/70 to-transparent"></div>
-				<div class="absolute bottom-0 p-5 sm:p-6">
-					<h2 class="text-2xl font-semibold">{featured.title}</h2>
-					<p class="mt-1 text-slate-300">{featured.subtitle}</p>
-					<div class="mt-3 flex items-center gap-3 text-slate-300/80">
-						<span class="inline-flex items-center gap-1">
-							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"
-								><path
-									d="M12 8v5l3 2"
-									stroke="currentColor"
-									stroke-width="1.5"
-									stroke-linecap="round"
-								/></svg
-							>
-							{featured.durationMin} min
-						</span>
-						{#each featured.tags as t}
+			{#if featured}
+				<article
+					class="relative overflow-hidden rounded-3xl border border-white/10 bg-slate-900/40 backdrop-blur-md"
+				>
+					<img
+						src={featured.cover}
+						alt={featured.title}
+						class="h-72 w-full object-cover opacity-90 sm:h-96"
+					/>
+					<div class="absolute inset-0 bg-gradient-to-t from-slate-950/70 to-transparent"></div>
+					<div class="absolute bottom-0 p-5 sm:p-6">
+						<h2 class="text-2xl font-semibold">{featured.title}</h2>
+						<p class="mt-1 text-slate-300">{featured.subtitle}</p>
+						<div class="mt-3 flex items-center gap-3 text-slate-300/80">
 							<span class="inline-flex items-center gap-1">
-								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"
-									><circle cx="12" cy="12" r="3" fill="currentColor" /></svg
+								<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+									><path
+										d="M12 8v5l3 2"
+										stroke="currentColor"
+										stroke-width="1.5"
+										stroke-linecap="round"
+									/></svg
 								>
-								{t}
+								{featured.durationMin} min
 							</span>
-						{/each}
+							{#each featured.tags as t (t)}
+								<span class="inline-flex items-center gap-1">
+									<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"
+										><circle cx="12" cy="12" r="3" fill="currentColor" /></svg
+									>
+									{t}
+								</span>
+							{/each}
+						</div>
 					</div>
-				</div>
-			</article>
+				</article>
+			{/if}
 		</section>
 
 		<!-- ============================================================================
@@ -396,13 +365,13 @@
 		<section class="mt-10">
 			<h3 class="section-heading">Library</h3>
 			<div class="xs:grid-cols-2 grid gap-4 sm:gap-6 lg:grid-cols-4">
-				{#each library as story}
+				{#each stories as story (story.id)}
 					<a
 						href={'/stories/' + story.id}
 						class="group relative overflow-hidden rounded-2xl bg-slate-900/40 ring-1 ring-white/10 transition hover:ring-white/20"
 					>
 						<img
-							src={story.cover}
+							src={story.cover_url}
 							alt={story.title}
 							class="h-52 w-full object-cover transition group-hover:scale-[1.02]"
 						/>
@@ -418,21 +387,21 @@
 											stroke-width="1.5"
 											stroke-linecap="round"
 										/></svg
-									>{story.durationMin} min</span
+									>{story.duration_min} min</span
 								>
-								{#if story.tags?.[0]}
-									<span>{story.tags[0]}</span>
-								{/if}
+								{#each story.tags as tag (tag)}
+									<span>{tag}</span>
+								{/each}
 							</div>
 						</div>
-						{#if story.previewUrl}
+						{#if story.preview_url}
 							<button
 								type="button"
 								class="absolute top-3 right-3 rounded-full bg-slate-900/70 px-3 py-1.5 text-xs ring-1 ring-white/10 hover:bg-slate-900/90"
 								onclick={() => playPreview(story)}
 								onmouseenter={(e) => {
 									e.stopPropagation();
-									userGesture && playPreview(story);
+									if (userGesture) playPreview(story);
 								}}
 								onmouseleave={(e) => {
 									e.stopPropagation();

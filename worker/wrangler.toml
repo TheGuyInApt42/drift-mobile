@@ -1,0 +1,9 @@
+name = "drift-api"
+main = "src/index.js"
+compatibility_date = "2026-06-02"
+compatibility_flags = ["nodejs_compat"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "drift"
+database_id = "92883d40-fdf5-44fb-9de8-8b39942e5b07"

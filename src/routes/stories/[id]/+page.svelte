@@ -1,9 +1,7 @@
 <script lang="ts">
-	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 
-	// Import components
 	import StoryPlayer from '$lib/components/StoryPlayer.svelte';
 	import SleepTimer from '$lib/components/SleepTimer.svelte';
 	import AmbientToggle from '$lib/components/AmbientToggle.svelte';
@@ -13,99 +11,27 @@
 	import NotificationToast from '$lib/components/NotificationToast.svelte';
 	import { ambient } from '$lib/state/ambient.svelte';
 
-	// Import story images
-	import noah from '$lib/assets/noah-hero.png';
-	import david from '$lib/assets/david.png';
-	import samaritan from '$lib/assets/samaritan.png';
-	import jonah from '$lib/assets/jonah.png';
+	interface Story {
+		id: string;
+		title: string;
+		subtitle: string | null;
+		duration_min: number;
+		cover_url: string;
+	}
 
-	// Story data with Jonah modified to accept multiple scenes
-	const stories = {
-		'noah-rainbow-promise': {
-			id: 'noah-rainbow-promise',
-			title: 'Noah and the Rainbow Promise',
-			subtitle: 'A gentle 25‑minute bedtime drama',
-			durationMin: 25,
-			tags: ['Calm', 'Faith & Light'],
-			cover: noah,
-			audioUrl:
-				'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/noah/Noah%20Scenes%201%2B2.mp3'
-		},
-		'david-giant-shadow': {
-			id: 'david-giant-shadow',
-			title: "David and the Giant's Shadow",
-			subtitle: 'A courageous tale of faith and determination',
-			durationMin: 22,
-			tags: ['Hopeful', 'Faith & Light'],
-			cover: david,
-			audioUrl: '/audio/stories/david.mp3'
-		},
-		'good-samaritan-road': {
-			id: 'good-samaritan-road',
-			title: 'The Road of Kindness',
-			subtitle: 'A story of compassion and mercy',
-			durationMin: 18,
-			tags: ['Kindness Tales'],
-			cover: samaritan,
-			audioUrl: '/audio/stories/samaritan.mp3'
-		},
-		'jonah-beneath-blue': {
-			id: 'jonah-beneath-blue',
-			title: 'Jonah: Beneath the Deep Blue',
-			subtitle: 'A journey of redemption and grace',
-			durationMin: 24,
-			tags: ['Reflective', 'Faith & Light'],
-			cover: jonah,
-			// Array of tracks for continuous play
-			audioUrl: [
-				{
-					title: 'Scene 1: Gath-Hepher',
-					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/01_Scene%201.mp3'
-				},
-				{
-					title: 'Scene 2: The Flight to Joppa',
-					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/02_Scene%202.mp3'
-				},
-				{
-					title: 'Scene 3: The Gathering Storm',
-					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/03_Scene%203.mp3'
-				},
-				{
-					title: 'Scene 4: The Sleep of Jonah',
-					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/04_Scene%204.mp3'
-				},
-				{
-					title: 'Scene 5: The Throw',
-					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/05_Scene%205.mp3'
-				},
-				{
-					title: 'Scene 6: The Descent into the Deep',
-					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/06_Scene%206.mp3'
-				},
-				{
-					title: 'Scene 7: The Leviathan',
-					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/07_Scene%207.mp3'
-				},
-				{
-					title: 'Scene 8: The Prayer from the Deep',
-					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/08_Scene%208.mp3'
-				},
-				{
-					title: 'Scene 9: The Vomit',
-					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/09_Scene%209.mp3'
-				},
-				{
-					title: 'Scene 10: The Road to Nineveh',
-					url: 'https://pub-4236d05ff21041bf8f87267716f5fa66.r2.dev/stories/jonah/10_Scene%2010.mp3'
-				}
-			]
-		}
-	};
+	interface Track {
+		id: number;
+		story_id: string;
+		track_order: number;
+		title: string;
+		audio_url: string;
+		duration_seconds: number;
+	}
 
-	let currentStory = $derived(() => {
-		const storyId = page.params.id;
-		return storyId ? stories[storyId as keyof typeof stories] : null;
-	});
+	let { data } = $props();
+	let story: Story = $derived(data.story);
+	let tracks: Track[] = $derived(data.tracks);
+	let tags: string[] = $derived(data.tags);
 
 	// Player state
 	let currentTrackIndex = $state(0);
@@ -114,33 +40,39 @@
 	let sleepTimerActive = $state(false);
 	let sleepTimerMinutes = $state(0);
 	let isTextMode = $state(false);
-	let ambientAnimationType = $state<'rain' | 'candle' | 'none'>('rain');
 
-	// 3. Extracting the real URL string reactively
-	let activeAudioUrl = $derived(() => {
-		const story = currentStory();
-		if (!story) return '';
+	// Derived values — plain expressions, not functions
+	let totalStoryMinutes = $derived(
+		tracks.length > 0
+			? Math.ceil(tracks.reduce((acc, t) => acc + (t.duration_seconds ?? 0), 0) / 60)
+			: story.duration_min
+	);
 
-		if (Array.isArray(story.audioUrl)) {
-			return story.audioUrl[currentTrackIndex]?.url || '';
-		}
-		return story.audioUrl;
-	});
+	let activeAudioUrl = $derived(
+		tracks.length > 0 ? (tracks[currentTrackIndex]?.audio_url ?? '') : ''
+	);
 
-	// Reset indices on navigation changes
+	// Reset track index when story changes
 	$effect(() => {
-		currentStory();
+		data.story; // track dependency
 		currentTrackIndex = 0;
 	});
 
-	// 4. Sequential track playlist routing
+	$effect(() => {
+		if (!story) goto('/');
+	});
+
+	$effect(() => {
+		// ambientAnimationType removed — AmbientAnimations can read ambient.enabled directly
+		// or pass it as a prop if needed
+	});
+
 	function handleTrackFinished() {
-		const story = currentStory();
-		if (story && Array.isArray(story.audioUrl)) {
-			if (currentTrackIndex < story.audioUrl.length - 1) {
+		if (tracks.length > 1) {
+			if (currentTrackIndex < tracks.length - 1) {
 				currentTrackIndex++;
 				isPlaying = true;
-				addNotification(`Playing next chapter: ${story.audioUrl[currentTrackIndex].title}`, 'info');
+				addNotification(`Playing: ${tracks[currentTrackIndex].title}`, 'info');
 			} else {
 				isPlaying = false;
 				currentTrackIndex = 0;
@@ -154,10 +86,14 @@
 	// Sleep timer
 	let sleepTimerInterval: ReturnType<typeof setTimeout> | null = null;
 
-	// Notifications state
-	let notifications = $state<
-		Array<{ id: number; message: string; type: 'success' | 'info' | 'warning' | 'error' }>
-	>([]);
+	type Notification = {
+		id: number;
+		message: string;
+		type: 'success' | 'info' | 'warning' | 'error';
+	};
+
+	let notifications: Notification[] = $state([]);
+
 	let notificationId = 0;
 
 	function handlePlayStateChange(playing: boolean) {
@@ -167,9 +103,7 @@
 	function handleSleepTimerSet(minutes: number) {
 		sleepTimerActive = true;
 		sleepTimerMinutes = minutes;
-
 		if (sleepTimerInterval) clearTimeout(sleepTimerInterval);
-
 		sleepTimerInterval = setTimeout(
 			() => {
 				isPlaying = false;
@@ -191,13 +125,8 @@
 	}
 
 	$effect(() => {
-		ambientAnimationType = ambient.enabled ? 'rain' : 'none';
+		if (isTextMode) isPlaying = false;
 	});
-
-	function handleTextModeToggle(enabled: boolean) {
-		isTextMode = enabled;
-		if (enabled) isPlaying = false;
-	}
 
 	function addNotification(message: string, type: 'success' | 'info' | 'warning' | 'error') {
 		const id = ++notificationId;
@@ -208,10 +137,6 @@
 		notifications = notifications.filter((n) => n.id !== id);
 	}
 
-	$effect(() => {
-		if (!currentStory()) goto('/');
-	});
-
 	onMount(() => {
 		return () => {
 			if (sleepTimerInterval) clearTimeout(sleepTimerInterval);
@@ -219,11 +144,10 @@
 	});
 </script>
 
-{#if currentStory()}
+{#if story}
 	<div
 		class="min-h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-slate-100"
 	>
-		<!-- Header -->
 		<header class="flex items-center justify-between px-6 py-4 sm:px-10">
 			<button
 				onclick={() => goto('/')}
@@ -257,26 +181,25 @@
 			</div>
 		</header>
 
-		<!-- Story Content -->
 		<main class="relative px-6 py-8 sm:px-10">
-			<!-- Ambient Animations -->
-			<AmbientAnimations animationType="rain" isActive={true} />
+			<AmbientAnimations
+				animationType={ambient.enabled ? 'rain' : 'none'}
+				isActive={ambient.enabled}
+			/>
 
 			<div class="mx-auto max-w-4xl">
-				<!-- Story Image -->
 				<div class="mb-8">
 					<img
-						src={currentStory()?.cover}
-						alt={currentStory()?.title}
+						src={story.cover_url}
+						alt={story.title}
 						class="h-64 w-full rounded-2xl object-cover sm:h-80"
 					/>
 				</div>
 
-				<!-- Story Info -->
 				<div class="mb-8">
-					<h1 class="mb-2 text-3xl font-semibold sm:text-4xl">{currentStory()?.title}</h1>
-					{#if currentStory()?.subtitle}
-						<p class="mb-4 text-slate-300">{currentStory()?.subtitle}</p>
+					<h1 class="mb-2 text-3xl font-semibold sm:text-4xl">{story.title}</h1>
+					{#if story.subtitle}
+						<p class="mb-4 text-slate-300">{story.subtitle}</p>
 					{/if}
 
 					<div class="flex flex-wrap items-center gap-4 text-slate-300">
@@ -289,9 +212,9 @@
 									stroke-linecap="round"
 								/>
 							</svg>
-							{currentStory()?.durationMin} min
+							{totalStoryMinutes} min
 						</span>
-						{#each currentStory()?.tags || [] as tag, index (index)}
+						{#each tags as tag (tag)}
 							<span class="inline-flex items-center gap-1">
 								<svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 									<circle cx="12" cy="12" r="3" fill="currentColor" />
@@ -302,26 +225,24 @@
 					</div>
 				</div>
 
-				<!-- Control Panel -->
 				<div class="mb-8 flex flex-wrap items-center gap-3">
 					<SleepTimer onTimerSet={handleSleepTimerSet} onTimerClear={handleSleepTimerClear} />
 					<AmbientToggle />
 					<TextModeToggle bind:isTextMode />
 				</div>
 
-				<!-- Story Content -->
 				{#if isTextMode}
-					<StoryText storyTitle={currentStory()?.title || ''} />
+					<StoryText storyTitle={story.title} />
 				{:else}
 					<StoryPlayer
-						audioUrl={activeAudioUrl()}
+						audioUrl={activeAudioUrl}
 						bind:volume
 						bind:isPlaying
 						onPlayStateChange={handlePlayStateChange}
 						onFinished={handleTrackFinished}
 					/>
 
-					{#if Array.isArray(currentStory()?.audioUrl)}
+					{#if tracks.length > 1}
 						<div
 							class="mt-6 rounded-2xl border border-slate-800/80 bg-slate-900/30 p-5 backdrop-blur-sm"
 						>
@@ -329,10 +250,10 @@
 								Chapters Playlist
 							</h3>
 							<ol class="space-y-2">
-								{#each currentStory()?.audioUrl || [] as track, idx}
+								{#each tracks as track, idx (track.id)}
 									<li
-										class="flex items-center justify-between rounded-xl px-4 py-2.5 text-sm transition-all {idx ===
-										currentTrackIndex
+										class="flex items-center justify-between rounded-xl px-4 py-2.5 text-sm transition-all
+										{idx === currentTrackIndex
 											? 'border border-amber-400/20 bg-amber-400/10 font-medium text-amber-300'
 											: 'text-slate-400 hover:bg-slate-800/30'}"
 									>
@@ -349,7 +270,6 @@
 			</div>
 		</main>
 
-		<!-- Notifications -->
 		{#each notifications as notification (notification.id)}
 			<NotificationToast
 				message={notification.message}

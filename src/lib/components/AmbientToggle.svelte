@@ -18,13 +18,13 @@
 
 <button
 	onclick={toggleAmbient}
-	class="group inline-flex items-center gap-2 rounded-full px-4 py-3 text-sm ring-1 backdrop-blur-md transition hover:bg-slate-800/80 {isEnabled
+	class="flex h-11 w-11 items-center justify-center rounded-full ring-1 backdrop-blur-md transition {isEnabled
 		? 'bg-amber-500/20 text-amber-300 ring-amber-500/30'
-		: 'bg-slate-800/60 ring-white/10'}"
+		: 'bg-slate-800/60 text-slate-400 ring-white/10 hover:bg-slate-800/80'}"
 	aria-pressed={isEnabled}
+	aria-label={`Ambient rain sound ${isEnabled ? 'on' : 'off'}`}
 >
-	<!-- Ambient sound icon -->
-	<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		{#if isEnabled}
 			<!-- Active state - sound waves -->
 			<path
@@ -58,8 +58,4 @@
 			/>
 		{/if}
 	</svg>
-
-	<span class="opacity-80 group-hover:opacity-100">
-		Ambient {isEnabled ? 'On' : 'Off'}
-	</span>
 </button>

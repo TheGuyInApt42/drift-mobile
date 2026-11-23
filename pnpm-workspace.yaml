@@ -2,3 +2,6 @@ onlyBuiltDependencies:
   - workerd
   - sharp
   - 'worker'
+
+patchedDependencies:
+  '@capgo/capacitor-native-audio@8.4.28': patches/@capgo__capacitor-native-audio@8.4.28.patch

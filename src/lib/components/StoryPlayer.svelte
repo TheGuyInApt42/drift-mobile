@@ -1,111 +1,422 @@
 <script lang="ts">
+	import { onMount, untrack } from 'svelte';
 	import { Howl } from 'howler';
-	import { untrack } from 'svelte';
+	import { Capacitor, registerPlugin, type PluginListenerHandle } from '@capacitor/core';
+	import { NativeAudio } from '@capgo/capacitor-native-audio';
 
 	interface Props {
+		/** The single merged audio file for the whole story. */
 		audioUrl: string;
-		volume?: number;
-		isPlaying?: boolean; // 1. Add isPlaying to your props definition
+		isPlaying?: boolean;
 		onPlayStateChange?: (isPlaying: boolean) => void;
+		/** Fires once, when the whole story finishes. */
 		onFinished?: () => void;
+		onTimeUpdate?: (currentTime: number) => void;
+		/** Applied once, on initial load — resume position from a previous session. */
+		seekToTime?: number | null;
+		trackTitle?: string;
+		artworkUrl?: string;
 	}
 
-	// 2. Turn isPlaying into a bindable property
 	let {
 		audioUrl,
-		volume = $bindable(0.7),
 		isPlaying = $bindable(false),
 		onPlayStateChange = () => {},
-		onFinished = () => {}
+		onFinished = () => {},
+		onTimeUpdate = () => {},
+		seekToTime = null,
+		trackTitle = '',
+		artworkUrl = ''
 	}: Props = $props();
 
-	let storyHowl: Howl | null = null;
 	let currentTime = $state(0);
 	let duration = $state(0);
 	let isLoading = $state(false);
-
 	let currentlyLoadedUrl = '';
 
-	// Initialize story audio
-	function initStory(shouldAutoPlay = false) {
-		if (!audioUrl || audioUrl === currentlyLoadedUrl) return;
+	// ── Network problems ───────────────────────────────────────────────
+	// loadError: playback failed (offline, R2 unreachable, read timed out).
+	// stalled: we think we're playing but no progress for STALL_MS — weak
+	// connection still buffering. Both show an inline banner with Retry.
+	let loadError = $state<string | null>(null);
+	let stalled = $state(false);
+	const STALL_MS = 20_000;
+	let lastProgressAt = 0;
 
+	function markProgress() {
+		lastProgressAt = Date.now();
+		if (stalled) stalled = false;
+	}
+
+	function handleLoadError(detail?: unknown) {
+		if (detail) console.error('[StoryPlayer] Playback error:', detail);
+		isLoading = false;
+		stalled = false;
+		setPlaying(false);
+		loadError =
+			typeof navigator !== 'undefined' && navigator.onLine === false
+				? "You're offline. Reconnect and tap Retry."
+				: "Couldn't load this story. Check your connection and tap Retry.";
+	}
+
+	function retry() {
+		const resumeAt = currentTime;
+		loadError = null;
+		stalled = false;
+		currentlyLoadedUrl = ''; // force a fresh load
+		initStory(true, resumeAt);
+		currentTime = resumeAt; // keep the bar where the listener was
+	}
+
+	// ── Engine choice ─────────────────────────────────────────────────
+	// On Android/iOS the story plays through @capgo/capacitor-native-audio
+	// (ExoPlayer / AVPlayer), NOT the WebView. WebView <audio> gets frozen
+	// by Android a minute or two after the screen locks, which is what
+	// was cutting stories off. Howler stays as the web/dev-server fallback.
+	const isNative = Capacitor.isNativePlatform();
+	const ASSET_ID = 'story';
+
+	// Keeps the process alive while the screen is locked (Android only).
+	// Native side: android/.../ForegroundAudioService(Plugin).java. Its
+	// notification shares id 1001 with NativeAudio's media notification,
+	// so the media-controls notification becomes the foreground one.
+	const ForegroundAudioService = registerPlugin<{
+		start(): Promise<void>;
+		stop(): Promise<void>;
+	}>('ForegroundAudioService');
+	const isAndroid = Capacitor.getPlatform() === 'android';
+	let serviceRunning = false;
+
+	async function startService() {
+		if (!isAndroid || serviceRunning) return;
+		try {
+			await ForegroundAudioService.start();
+			serviceRunning = true;
+		} catch (e) {
+			console.error('[StoryPlayer] Could not start foreground service', e);
+		}
+	}
+
+	async function stopService() {
+		if (!isAndroid || !serviceRunning) return;
+		serviceRunning = false;
+		try {
+			await ForegroundAudioService.stop();
+		} catch {
+			// already stopped
+		}
+	}
+
+	// configure() is global to the plugin — do it once per app session.
+	let configured: Promise<void> | null = null;
+	function configureNative() {
+		configured ??= NativeAudio.configure({
+			backgroundPlayback: true, // don't auto-pause when the app is backgrounded
+			showNotification: true, // lock-screen / notification-shade controls
+			// Audio focus is handled per-play by ExoPlayer itself (patched in
+			// patches/@capgo__capacitor-native-audio@8.4.28.patch): pauses for
+			// Spotify/calls/alarms, resumes after short interruptions, pauses
+			// when headphones unplug. The plugin's own focus handling only
+			// requested focus once at startup, so leave it off.
+			focus: false
+			// NOTE: don't pass `background: true` — on Android it switches the
+			// audio mode to MODE_IN_COMMUNICATION (phone-call routing).
+		}).catch((e) => console.error('[StoryPlayer] NativeAudio.configure failed', e));
+		return configured;
+	}
+
+	let nativeLoaded = false;
+	let nativeStarted = false; // play() has been called at least once for this asset
+	let pendingSeek: number | null = null;
+	let nativeListeners: PluginListenerHandle[] = [];
+
+	// Web fallback
+	let storyHowl: Howl | null = null;
+
+	function setPlaying(playing: boolean) {
+		if (isPlaying === playing) return;
+		isPlaying = playing;
+		onPlayStateChange(playing);
+		if (!isNative) setMediaSessionPlaybackState(playing ? 'playing' : 'paused');
+	}
+
+	function finish() {
+		setPlaying(false);
+		nativeStarted = false;
+		stopService();
+		onFinished();
+	}
+
+	// ── MediaSession (web only — native gets this from the plugin) ──────
+	function hasMediaSession() {
+		return !isNative && typeof navigator !== 'undefined' && 'mediaSession' in navigator;
+	}
+
+	function updateMediaSessionMetadata() {
+		if (!hasMediaSession()) return;
+		navigator.mediaSession.metadata = new MediaMetadata({
+			title: trackTitle || 'Story',
+			artwork: artworkUrl ? [{ src: artworkUrl, sizes: '512x512', type: 'image/png' }] : []
+		});
+	}
+
+	function updatePositionState() {
+		if (!hasMediaSession() || typeof navigator.mediaSession.setPositionState !== 'function') return;
+		if (duration <= 0) return;
+		try {
+			navigator.mediaSession.setPositionState({
+				duration,
+				playbackRate: 1,
+				position: Math.min(currentTime, duration)
+			});
+		} catch {
+			// harmless
+		}
+	}
+
+	function setMediaSessionPlaybackState(state: MediaSessionPlaybackState) {
+		if (!hasMediaSession()) return;
+		navigator.mediaSession.playbackState = state;
+	}
+
+	function registerMediaSessionHandlers() {
+		if (!hasMediaSession()) return;
+		navigator.mediaSession.setActionHandler('play', () => play());
+		navigator.mediaSession.setActionHandler('pause', () => pause());
+		navigator.mediaSession.setActionHandler('seekbackward', (d) => seekTo(currentTime - (d.seekOffset ?? 10)));
+		navigator.mediaSession.setActionHandler('seekforward', (d) => seekTo(currentTime + (d.seekOffset ?? 10)));
+		navigator.mediaSession.setActionHandler('seekto', (d) => {
+			if (d.seekTime != null) seekTo(d.seekTime);
+		});
+	}
+
+	function clearMediaSessionHandlers() {
+		if (!hasMediaSession()) return;
+		const actions: MediaSessionAction[] = ['play', 'pause', 'seekbackward', 'seekforward', 'seekto'];
+		for (const action of actions) {
+			try {
+				navigator.mediaSession.setActionHandler(action, null);
+			} catch {
+				// not supported everywhere
+			}
+		}
+		navigator.mediaSession.playbackState = 'none';
+	}
+
+	// ── Native engine ─────────────────────────────────────────────────
+	async function addNativeListeners() {
+		nativeListeners.push(
+			await NativeAudio.addListener('currentTime', (e) => {
+				if (e.assetId !== ASSET_ID) return;
+				currentTime = duration > 0 ? Math.min(e.currentTime, duration) : e.currentTime;
+				markProgress();
+				onTimeUpdate(currentTime);
+			}),
+			await NativeAudio.addListener('complete', async (e) => {
+				if (e.assetId !== ASSET_ID) return;
+				// Belt-and-braces: older plugin builds fired a bogus `complete`
+				// after a seek. If audio is still going, it isn't finished.
+				const still = await NativeAudio.isPlaying({ assetId: ASSET_ID }).catch(() => ({
+					isPlaying: false
+				}));
+				if (still.isPlaying) return;
+				currentTime = duration;
+				finish();
+			}),
+			// Fires after lock-screen / notification actions (and focus loss),
+			// so the in-app button stays in sync with what's actually playing.
+			await NativeAudio.addListener('playbackState', (e) => {
+				if (e.assetId !== ASSET_ID || e.reason === 'complete') return;
+				if (e.reason?.startsWith('error')) {
+					handleLoadError(e.reason);
+					return;
+				}
+				if (e.duration && e.duration > 0) duration = e.duration;
+				if (e.currentTime != null) currentTime = e.currentTime;
+				setPlaying(e.isPlaying);
+				if (e.state === 'stopped') stopService();
+			})
+		);
+	}
+
+	async function unloadNative() {
+		if (!nativeLoaded) return;
+		nativeLoaded = false;
+		nativeStarted = false;
+		try {
+			await NativeAudio.unload({ assetId: ASSET_ID });
+		} catch {
+			// not loaded
+		}
+	}
+
+	async function initNative(shouldAutoPlay: boolean, seekPosition: number | null) {
+		await configureNative();
+		await unloadNative();
+		try {
+			await NativeAudio.preload({
+				assetId: ASSET_ID,
+				assetPath: audioUrl,
+				isUrl: true,
+				notificationMetadata: {
+					title: trackTitle || 'Story',
+					artist: 'Selah Audio',
+					artworkUrl: artworkUrl || undefined
+				}
+			});
+			nativeLoaded = true;
+			const d = await NativeAudio.getDuration({ assetId: ASSET_ID }).catch(() => ({ duration: 0 }));
+			duration = d.duration > 0 ? d.duration : 0;
+			if (seekPosition !== null && seekPosition > 0) {
+				const clamped = duration > 0 ? Math.min(seekPosition, Math.max(duration - 0.5, 0)) : seekPosition;
+				pendingSeek = clamped;
+				currentTime = clamped;
+			}
+			isLoading = false;
+			if (shouldAutoPlay || untrack(() => isPlaying)) await play();
+		} catch (e) {
+			currentlyLoadedUrl = '';
+			handleLoadError(e);
+		}
+	}
+
+	// ── Web engine (Howler) ───────────────────────────────────────────
+	function initWeb(shouldAutoPlay: boolean, seekPosition: number | null) {
 		if (storyHowl) {
 			storyHowl.stop();
 			storyHowl.unload();
 			storyHowl = null;
 		}
-
-		isLoading = true;
-		currentlyLoadedUrl = audioUrl;
-
 		storyHowl = new Howl({
 			src: [audioUrl],
 			html5: true,
-			volume: untrack(() => volume),
 			onload: () => {
 				duration = storyHowl?.duration() || 0;
 				isLoading = false;
-
-				// 3. Check either the explicit flag OR the parent's current state
-				if (shouldAutoPlay || isPlaying) {
-					storyHowl?.play();
+				updateMediaSessionMetadata();
+				updatePositionState();
+				if (seekPosition !== null && seekPosition > 0) {
+					const clamped = duration > 0 ? Math.min(seekPosition, Math.max(duration - 0.5, 0)) : 0;
+					storyHowl?.seek(clamped);
+					currentTime = clamped;
 				}
+				if (shouldAutoPlay || untrack(() => isPlaying)) storyHowl?.play();
 			},
 			onplay: () => {
-				isPlaying = true;
-				onPlayStateChange(true);
+				setPlaying(true);
 				updateTime();
 			},
-			onpause: () => {
-				isPlaying = false;
-				onPlayStateChange(false);
-			},
+			onpause: () => setPlaying(false),
 			onstop: () => {
-				isPlaying = false;
 				currentTime = 0;
-				onPlayStateChange(false);
+				setPlaying(false);
 			},
-			onend: () => {
-				// 4. CRITICAL: Don't forcefully wipe out parent state here if we are chaining tracks
-				onPlayStateChange(false);
-				onFinished();
-			},
-			onloaderror: () => {
-				isLoading = false;
-				isPlaying = false;
+			onend: () => finish(),
+			onloaderror: (_id, err) => {
 				currentlyLoadedUrl = '';
-				console.error('Failed to load audio source link:', audioUrl);
-			}
+				handleLoadError(err ?? audioUrl);
+			},
+			onplayerror: (_id, err) => handleLoadError(err ?? audioUrl)
 		});
 	}
 
 	function updateTime() {
 		if (storyHowl && isPlaying) {
-			currentTime = storyHowl.seek() || 0;
+			const raw = storyHowl.seek() || 0;
+			currentTime = duration > 0 ? Math.min(raw, duration) : raw;
+			markProgress();
+			onTimeUpdate(currentTime);
+			updatePositionState();
 			requestAnimationFrame(updateTime);
 		}
 	}
 
+	// ── Shared controls ───────────────────────────────────────────────
+	function initStory(shouldAutoPlay = false, seekPosition: number | null = null) {
+		if (!audioUrl || audioUrl === currentlyLoadedUrl) return;
+		isLoading = true;
+		currentlyLoadedUrl = audioUrl;
+		currentTime = 0;
+		duration = 0;
+		if (isNative) initNative(shouldAutoPlay, seekPosition);
+		else initWeb(shouldAutoPlay, seekPosition);
+	}
+
+	async function play() {
+		if (!isNative) {
+			storyHowl?.play();
+			return;
+		}
+		if (!nativeLoaded) return;
+		markProgress(); // start the stall watchdog's clock
+		// Start the foreground service BEFORE audio, while we're still in the
+		// foreground — Android 12+ refuses to start one from the background.
+		await startService();
+		try {
+			if (nativeStarted) {
+				await NativeAudio.resume({ assetId: ASSET_ID });
+			} else {
+				await NativeAudio.play({ assetId: ASSET_ID, time: pendingSeek ?? 0 });
+				pendingSeek = null;
+				nativeStarted = true;
+			}
+			setPlaying(true);
+			if (duration <= 0) {
+				const d = await NativeAudio.getDuration({ assetId: ASSET_ID }).catch(() => ({ duration: 0 }));
+				if (d.duration > 0) duration = d.duration;
+			}
+		} catch (e) {
+			handleLoadError(e);
+		}
+	}
+
+	async function pause() {
+		if (!isNative) {
+			storyHowl?.pause();
+			return;
+		}
+		try {
+			await NativeAudio.pause({ assetId: ASSET_ID });
+		} catch {
+			// not playing
+		}
+		// Service stays up while paused so the lock-screen play button keeps working.
+		setPlaying(false);
+	}
+
 	function togglePlay() {
-		if (!storyHowl) {
+		if (loadError) {
+			retry();
+			return;
+		}
+		if (!currentlyLoadedUrl) {
 			initStory(true);
 			return;
 		}
 		if (isLoading) return;
-
-		if (isPlaying) {
-			storyHowl.pause();
-		} else {
-			storyHowl.play();
-		}
+		if (isPlaying) pause();
+		else play();
 	}
 
 	function seekTo(seconds: number) {
-		if (!storyHowl) return;
-		storyHowl.seek(seconds);
-		currentTime = seconds;
+		const clamped = duration > 0 ? Math.min(Math.max(seconds, 0), duration) : Math.max(seconds, 0);
+		currentTime = clamped;
+		if (!isNative) {
+			storyHowl?.seek(clamped);
+			updatePositionState();
+			return;
+		}
+		if (!nativeLoaded) return;
+		if (nativeStarted) {
+			NativeAudio.setCurrentTime({ assetId: ASSET_ID, time: clamped }).catch(() => {});
+		} else {
+			pendingSeek = clamped;
+		}
 	}
+
+	// Exposed so the parent can jump to a chapter mid-playback via
+	// bind:this — e.g. `playerRef.seekTo(chapter.startSeconds)`.
+	export { seekTo };
 
 	function formatTime(seconds: number): string {
 		const mins = Math.floor(seconds / 60);
@@ -113,28 +424,41 @@
 		return `${mins}:${secs.toString().padStart(2, '0')}`;
 	}
 
-	// Reactive Effect: ONLY runs when audioUrl changes explicitly
+	// Reactive: only runs when audioUrl actually changes (once per story)
 	$effect(() => {
 		if (audioUrl) {
-			// Look at the state right before the change happens
 			const wasPlaying = untrack(() => isPlaying);
-			initStory(wasPlaying);
+			// Defer to next microtask so the parent's onMount can set
+			// seekToTime first (resume-position logic runs there).
+			Promise.resolve().then(() => {
+				const seekPos = untrack(() => seekToTime);
+				initStory(wasPlaying, seekPos);
+			});
 		}
 	});
 
-	// Reactive Effect: Isolated entirely to volume mutations
-	$effect(() => {
-		if (storyHowl) {
-			storyHowl.volume(volume);
-		}
-	});
+	onMount(() => {
+		if (isNative) addNativeListeners();
+		else registerMediaSessionHandlers();
 
-	// Destruction Lifecycle Hook
-	$effect(() => {
+		const watchdog = setInterval(() => {
+			if (isPlaying && !loadError && Date.now() - lastProgressAt > STALL_MS) stalled = true;
+		}, 5_000);
+
 		return () => {
-			if (storyHowl) {
-				storyHowl.stop();
-				storyHowl.unload();
+			clearInterval(watchdog);
+			if (isNative) {
+				for (const l of nativeListeners) l.remove();
+				nativeListeners = [];
+				NativeAudio.stop({ assetId: ASSET_ID }).catch(() => {});
+				unloadNative();
+				stopService();
+			} else {
+				clearMediaSessionHandlers();
+				if (storyHowl) {
+					storyHowl.stop();
+					storyHowl.unload();
+				}
 			}
 		};
 	});
@@ -170,7 +494,7 @@
 		</button>
 	</div>
 
-	<div class="mb-6">
+	<div>
 		<div class="mb-3 flex justify-between text-sm text-slate-300">
 			<span>{formatTime(currentTime)}</span>
 			<span>{formatTime(duration)}</span>
@@ -184,7 +508,7 @@
 			aria-valuemax={duration}
 			aria-valuenow={currentTime}
 			onclick={(e) => {
-				if (!storyHowl || duration === 0) return;
+				if (duration === 0) return;
 				const rect = e.currentTarget.getBoundingClientRect();
 				const x = e.clientX - rect.left;
 				const percentage = x / rect.width;
@@ -204,36 +528,24 @@
 		>
 			<div
 				class="h-full rounded-full bg-gradient-to-r from-amber-300 to-amber-400 transition-all duration-300 group-hover:shadow-lg group-hover:shadow-amber-500/25"
-				style="width: {duration > 0 ? (currentTime / duration) * 100 : 0}%"
+				style="width: {duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0}%"
 			></div>
 		</div>
 	</div>
-
-	<div class="flex items-center gap-4">
-		<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-			<path
-				d="M11 5L6 9H2v6h4l5 4V5z"
-				stroke="currentColor"
-				stroke-width="1.5"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			/>
-			<path
-				d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"
-				stroke="currentColor"
-				stroke-width="1.5"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			/>
-		</svg>
-		<input
-			type="range"
-			min="0"
-			max="1"
-			step="0.05"
-			bind:value={volume}
-			class="h-2 flex-1 cursor-pointer appearance-none rounded-lg bg-slate-700 transition-all hover:bg-slate-600"
-		/>
-		<span class="text-sm text-slate-300">{Math.round(volume * 100)}%</span>
-	</div>
+	{#if loadError || stalled}
+		<div
+			role="alert"
+			class="mt-5 flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm {loadError
+				? 'border-red-500/30 bg-red-500/10 text-red-200'
+				: 'border-amber-400/30 bg-amber-400/10 text-amber-100'}"
+		>
+			<span>{loadError ?? 'Still loading… your connection may be slow.'}</span>
+			<button
+				onclick={retry}
+				class="shrink-0 rounded-lg bg-white/10 px-3 py-1.5 font-medium text-white transition hover:bg-white/20"
+			>
+				Retry
+			</button>
+		</div>
+	{/if}
 </div>

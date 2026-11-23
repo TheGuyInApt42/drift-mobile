@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Drift</string>
-    <string name="title_activity_main">Drift</string>
-    <string name="package_name">com.driftsleep.app</string>
-    <string name="custom_url_scheme">com.driftsleep.app</string>
+    <string name="app_name">Selah Audio</string>
+    <string name="title_activity_main">Selah Audio</string>
+    <string name="package_name">com.selah.audio</string>
+    <string name="custom_url_scheme">com.selah.audio</string>
 </resources>

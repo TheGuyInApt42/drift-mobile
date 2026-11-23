@@ -15,13 +15,13 @@
 
 <button
 	onclick={toggleTextMode}
-	class="group inline-flex items-center gap-2 rounded-full px-4 py-3 text-sm ring-1 backdrop-blur-md transition hover:bg-slate-800/80 {isTextMode
-		? 'bg-amber-500/20 text-amber-300 ring-amber-500/30'
-		: 'bg-slate-800/60 ring-white/10'}"
 	aria-pressed={isTextMode}
+	aria-label={isTextMode ? 'Switch to audio mode' : 'Switch to reading mode'}
+	class="flex h-11 w-11 items-center justify-center rounded-full ring-1 backdrop-blur-md transition {isTextMode
+		? 'bg-amber-500/20 text-amber-300 ring-amber-500/30'
+		: 'bg-slate-800/60 text-slate-400 ring-white/10 hover:bg-slate-800/80'}"
 >
-	<!-- Text mode icon -->
-	<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+	<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 		{#if isTextMode}
 			<!-- Active state - book with text lines -->
 			<path
@@ -62,8 +62,4 @@
 			/>
 		{/if}
 	</svg>
-
-	<span class="opacity-80 group-hover:opacity-100">
-		{isTextMode ? 'Reading Mode' : 'Audio Mode'}
-	</span>
 </button>

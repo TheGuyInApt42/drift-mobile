@@ -35,48 +35,33 @@
 </script>
 
 <div class="relative">
-	<!-- Sleep Timer Button -->
+	<!-- Sleep Timer trigger — icon only, badge shows the active duration -->
 	<button
 		onclick={toggleDropdown}
-		class="group inline-flex items-center gap-2 rounded-full px-4 py-3 text-sm ring-1 backdrop-blur-md transition hover:bg-slate-800/80 {isActive
+		aria-expanded={isOpen}
+		aria-label={isActive ? `Sleep timer set, ${selectedMinutes} minutes` : 'Sleep timer'}
+		class="relative flex h-11 w-11 items-center justify-center rounded-full ring-1 backdrop-blur-md transition {isActive
 			? 'bg-amber-500/20 text-amber-300 ring-amber-500/30'
-			: 'bg-slate-800/60 ring-white/10'}"
+			: 'bg-slate-800/60 text-slate-400 ring-white/10 hover:bg-slate-800/80'}"
 	>
-		<svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+		<svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
 			{#if isActive}
-				<!-- Active timer icon -->
 				<circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" />
 				<path d="M12 6v6l4 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
 				<circle cx="12" cy="12" r="2" fill="currentColor" class="animate-pulse" />
 			{:else}
-				<!-- Sleep timer icon -->
 				<path d="M20 12a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z" stroke="currentColor" stroke-width="1.5" />
 				<path d="M12 6v6l4 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
 			{/if}
 		</svg>
-		<span class="opacity-80 group-hover:opacity-100">
-			{#if isActive}
-				{selectedMinutes} min
-			{:else}
-				Sleep Timer
-			{/if}
-		</span>
-		<svg
-			width="12"
-			height="12"
-			viewBox="0 0 24 24"
-			fill="none"
-			aria-hidden="true"
-			class="transition-transform {isOpen ? 'rotate-180' : ''}"
-		>
-			<path
-				d="M6 9l6 6 6-6"
-				stroke="currentColor"
-				stroke-width="1.5"
-				stroke-linecap="round"
-				stroke-linejoin="round"
-			/>
-		</svg>
+
+		{#if isActive}
+			<span
+				class="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-400 px-0.5 text-[9px] font-bold text-slate-900"
+			>
+				{selectedMinutes}
+			</span>
+		{/if}
 	</button>
 
 	<!-- Dropdown Menu -->

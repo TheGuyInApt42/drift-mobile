@@ -1,7 +1,10 @@
 import { Howl } from 'howler';
 
 let ambientEnabled = $state(false);
-let ambientHowl = $state<Howl | undefined>(undefined);
+// $state.raw() instead of $state(): Howl manages its own internal audio-graph
+// state, so it shouldn't be deep-proxied — we only need reactivity over
+// *which* instance is assigned, not over its internal properties.
+let ambientHowl = $state.raw<Howl | undefined>(undefined);
 
 /**
  * Ambient sound state management
